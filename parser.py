@@ -1,31 +1,49 @@
 import re
 
-# --- KEYWORD GROUPS ---
+# --- KEYWORDS ---
 TOTAL_KEYWORDS = [
     "total", "amount", "amount due", "grand total",
     "balance", "amount payable", "invoice total"
 ]
 
-EMAIL_KEYWORDS = ["email", "e-mail", "email address"]
-
-PHONE_KEYWORDS = ["phone", "mobile", "contact"]
-
-COMPANY_KEYWORDS = ["company", "business", "seller"]
-
-ADDRESS_KEYWORDS = ["address", "billing", "shipping"]
+DATE_PATTERNS = [
+    r'\d{2}/\d{2}/\d{4}',
+    r'\d{2}-\d{2}-\d{4}',
+    r'\d{4}-\d{2}-\d{2}'
+]
 
 
-# --- CLEANING FUNCTION ---
+# --- CLEAN TEXT ---
 def clean_text(text):
-    text = text.replace("  ", " ")
-    text = text.replace("\n\n", "\n")
-    text = text.replace(" @ ", "@")
-    return text
+    text = re.sub(r'\s+', ' ', text)
+    text = re.sub(r'\s*@\s*', '@', text)
+
+    # add structure hints
+    keywords = [
+        "Invoice", "Total", "Phone", "Email",
+        "Address", "Billing", "Shipping",
+        "Company", "Description", "Name"
+    ]
+
+    for kw in keywords:
+        text = re.sub(rf'(?i)\s({kw})', r'\n\1', text)
+
+    return text.strip()
 
 
 # --- MAIN PARSER ---
 def extract_invoice_data(text):
-    data = {}
+
+    data = {
+        "invoice_number": None,
+        "date": None,
+        "total": None,
+        "email": None,
+        "phone": None,
+        "company": None,
+        "names": [],
+        "addresses": []
+    }
 
     text = clean_text(text)
     lines = text.split("\n")
@@ -33,115 +51,126 @@ def extract_invoice_data(text):
     # ---------------- INVOICE NUMBER ----------------
     invoice_candidates = []
 
+        # PRIMARY: context-based
     for i, line in enumerate(lines):
         if "invoice" in line.lower():
 
-            # same line
-            matches = re.findall(r'[A-Z0-9/-]+', line)
+            matches = re.findall(r'[A-Z0-9/-]{5,}', line)
             invoice_candidates.extend(matches)
 
-            # next line
             if i + 1 < len(lines):
-                next_line = lines[i + 1]
-                matches = re.findall(r'[A-Z0-9/-]+', next_line)
+                matches = re.findall(r'[A-Z0-9/-]{5,}', lines[i + 1])
                 invoice_candidates.extend(matches)
 
-    # filter valid candidates
-    filtered = [
+    # FALLBACK: global search
+    if not invoice_candidates:
+        candidates = re.findall(r'\b[A-Z0-9/-]{5,}\b', text)
+        invoice_candidates = [
+            c for c in candidates if any(ch.isdigit() for ch in c)
+        ]
+
+    # FILTER
+    invoice_candidates = [
         c for c in invoice_candidates
-        if any(char.isdigit() for char in c)
-        and len(c) >= 5
+        if any(ch.isdigit() for ch in c)
+        and not re.match(r'\d{2}[/-]\d{2}[/-]\d{4}', c)
+        and len(c) <= 12
     ]
 
-    if filtered:
-        data["invoice_number"] = max(filtered, key=len)
+    if invoice_candidates:
+        data["invoice_number"] = invoice_candidates[0]
 
     # ---------------- DATE ----------------
-    for line in lines:
-        match = re.search(r'\d{2}/\d{2}/\d{4}', line)
+    for pattern in DATE_PATTERNS:
+        match = re.search(pattern, text)
         if match:
             data["date"] = match.group()
             break
 
     # ---------------- TOTAL ----------------
-    for i, line in enumerate(lines):
-        line_lower = line.lower()
+    totals = []
 
-        if any(k in line_lower for k in TOTAL_KEYWORDS):
+    for line in lines:
+        if any(k in line.lower() for k in TOTAL_KEYWORDS):
+            nums = re.findall(r'\d+(?:,\d{3})*(?:\.\d+)?', line)
 
-            # extract numbers (handles 2280, 2,280, 1,200.50)
-            numbers = re.findall(r'\d{1,3}(?:,\d{3})*(?:\.\d+)?|\d+', line)
+            for n in nums:
+                val = float(n.replace(",", ""))
+                if val > 500:  # ignore unit prices
+                    totals.append(val)
 
-            if numbers:
-                values = [float(n.replace(",", "")) for n in numbers]
-                data["total"] = str(max(values))
+    if not totals:
+        all_nums = re.findall(r'\d+(?:,\d{3})*(?:\.\d+)?', text)
+        vals = [float(n.replace(",", "")) for n in all_nums]
+        if vals:
+            totals.append(max(vals))
 
-            # check next line
-            elif i + 1 < len(lines):
-                next_line = lines[i + 1]
-                numbers = re.findall(r'\d{1,3}(?:,\d{3})*(?:\.\d+)?|\d+', next_line)
-
-                if numbers:
-                    values = [float(n.replace(",", "")) for n in numbers]
-                    data["total"] = str(max(values))
-
-            # OPTIONAL: check previous line (advanced)
-            elif i - 1 >= 0:
-                prev_line = lines[i - 1]
-                numbers = re.findall(r'\d{1,3}(?:,\d{3})*(?:\.\d+)?|\d+', prev_line)
-
-                if numbers:
-                    values = [float(n.replace(",", "")) for n in numbers]
-                    data["total"] = str(max(values))
+    if totals:
+        data["total"] = str(max(totals))
 
     # ---------------- EMAIL ----------------
-    for i, line in enumerate(lines):
-        if any(k in line.lower() for k in EMAIL_KEYWORDS):
-
-            match = re.search(r'\S+@\S+', line)
-            if match:
-                data["email"] = match.group()
-
-            elif i + 1 < len(lines):
-                data["email"] = lines[i + 1].strip().replace(" ", "")
+    email_match = re.search(
+        r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}', text)
+    if email_match:
+        data["email"] = email_match.group()
 
     # ---------------- PHONE ----------------
-    for i, line in enumerate(lines):
-        if any(k in line.lower() for k in PHONE_KEYWORDS):
+    phone_match = re.search(
+        r'\(?\d{3}\)?[\s\-]\d{3}[\s\-]\d{4}', text)
+    if phone_match:
+        data["phone"] = phone_match.group()
 
-            match = re.search(r'\(?\d{3}\)?[-\s]\d{3}[-\s]\d{4}', line)
-            if match:
-                data["phone"] = match.group()
+    # ---------------- COMPANY + NAMES ----------------
+    # Extract chunk between Company Name Name and Address
+    pattern = r'Company\s+Name\s+Name\s+(.*?)\s+Address'
+    match = re.search(pattern, text, re.IGNORECASE)
 
-            elif i + 1 < len(lines):
-                data["phone"] = lines[i + 1].strip()
+    if match:
+        chunk = match.group(1).strip()
 
-    # ---------------- COMPANY ----------------
-    for i, line in enumerate(lines):
-        if any(k in line.lower() for k in COMPANY_KEYWORDS):
+        # Remove noise words
+        noise_words = {"lane", "road", "street"}
+        words = [w for w in chunk.split() if w.lower() not in noise_words]
 
-            if i + 1 < len(lines):
-                candidate = lines[i + 1].strip()
+        # -------- COMPANY --------
+        if len(words) >= 2:
+            data["company"] = " ".join(words[:2])
 
-                if (
-                    not any(char.isdigit() for char in candidate)
-                    and "@" not in candidate
-                    and ".com" not in candidate
-                    and len(candidate.split()) <= 6
-                ):
-                    data["company"] = candidate
+        # -------- NAMES --------
+        name_pattern = r'\b[A-Z][a-z]+\s[A-Z][a-z]+\b'
+        names = re.findall(name_pattern, chunk)
 
-    # ---------------- ADDRESS ----------------
-    for i, line in enumerate(lines):
-        if any(k in line.lower() for k in ADDRESS_KEYWORDS):
+        # remove company from names
+        names = [n for n in names if data["company"] not in n]
 
-            if i + 1 < len(lines):
-                addr = lines[i + 1].strip()
+        if names:
+            data["names"] = list(set(names))
 
-                if (
-                    len(addr) > 10
-                    and any(char.isdigit() for char in addr)
-                ):
-                    data.setdefault("addresses", []).append(addr)
+    # fallback (if above fails)
+    if not data["company"]:
+        for line in lines:
+            if "company" in line.lower():
+                parts = line.split()
+                if len(parts) > 1:
+                    data["company"] = " ".join(parts[1:])
+                    break
+
+    # ---------------- ADDRESSES ----------------
+    address_pattern = r'\d{3,}[^A-Z]+?(?:\d{5,6})'
+    matches = re.findall(address_pattern, text)
+
+    addresses = []
+    for addr in matches:
+        addr = addr.strip()
+        if len(addr) > 15:
+            addresses.append(addr)
+
+    if not addresses:
+        for line in lines:
+            if "address" in line.lower() and any(c.isdigit() for c in line):
+                addresses.append(line.strip())
+
+    if addresses:
+        data["addresses"] = list(set(addresses))
 
     return data

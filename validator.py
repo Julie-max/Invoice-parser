@@ -1,30 +1,87 @@
+import re
+
 def calculate_confidence(data):
     score = 0
-    total = 6
+    total_fields = 8   # we now include names + addresses
 
-    # Invoice number
+    # ---------------- INVOICE NUMBER ----------------
     if data.get("invoice_number"):
-        score += 1
+        val = data["invoice_number"]
 
-    # Date
+        if (
+            5 <= len(val) <= 12
+            and any(ch.isdigit() for ch in val)
+            and not re.match(r'\d{2}[/-]\d{2}[/-]\d{4}', val)  # not date
+            and not (val.isdigit() and len(val) > 10)  # avoid long IDs
+        ):
+            score += 1
+
+    # ---------------- DATE ----------------
     if data.get("date"):
-        score += 1
+        if re.match(
+            r'\d{2}[/-]\d{2}[/-]\d{4}|\d{4}[/-]\d{2}[/-]\d{2}',
+            data["date"]
+        ):
+            score += 1
 
-    # Total
+    # ---------------- TOTAL ----------------
     if data.get("total"):
-        score += 1
+        try:
+            val = float(data["total"])
+            if 500 < val < 1e7:
+                score += 1
+        except:
+            pass
 
-    # Email (valid format)
-    if data.get("email") and "@" in data["email"]:
-        score += 1
+    # ---------------- EMAIL ----------------
+    if data.get("email"):
+        if re.match(
+            r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}',
+            data["email"]
+        ):
+            score += 1
 
-    # Phone (basic length check)
-    if data.get("phone") and len(data["phone"]) >= 10:
-        score += 1
+    # ---------------- PHONE ----------------
+    if data.get("phone"):
+        digits = re.sub(r'\D', '', data["phone"])
+        if len(digits) >= 10:
+            score += 1
 
-    # Company
+    # ---------------- COMPANY ----------------
     if data.get("company"):
-        score += 1
+        val = data["company"]
 
-    confidence = (score / total) * 100
+        if (
+            val.lower() not in ["name", "company"]
+            and not any(char.isdigit() for char in val)
+            and "@" not in val
+            and ".com" not in val
+            and len(val.split()) <= 5
+        ):
+            score += 1
+
+    # ---------------- NAMES ----------------
+    if data.get("names"):
+        valid_names = [
+            n for n in data["names"]
+            if len(n.split()) == 2  # first + last name
+        ]
+
+        if valid_names:
+            score += 1
+
+    # ---------------- ADDRESSES ----------------
+    if data.get("addresses"):
+        valid_addresses = [
+            addr for addr in data["addresses"]
+            if (
+                len(addr) > 10
+                and any(ch.isdigit() for ch in addr)
+            )
+        ]
+
+        if valid_addresses:
+            score += 1
+
+    confidence = (score / total_fields) * 100
     return confidence
