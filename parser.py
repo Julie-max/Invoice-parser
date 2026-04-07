@@ -3,7 +3,7 @@ import re
 # --- KEYWORDS ---
 TOTAL_KEYWORDS = [
     "total", "amount", "amount due", "grand total",
-    "balance", "amount payable", "invoice total"
+    "balance", "amount payable", "invoice total", "balance due", "invoice due"
 ]
 
 DATE_PATTERNS = [
@@ -64,7 +64,7 @@ def extract_invoice_data(text):
 
     # FALLBACK: global search
     if not invoice_candidates:
-        candidates = re.findall(r'\b[A-Z0-9/-]{5,}\b', text)
+        candidates = re.findall(r'(?i)\b[A-Z0-9/-]{5,}\b', text)
         invoice_candidates = [
             c for c in candidates if any(ch.isdigit() for ch in c)
         ]
@@ -91,13 +91,12 @@ def extract_invoice_data(text):
     totals = []
 
     for line in lines:
-        if any(k in line.lower() for k in TOTAL_KEYWORDS):
+        if any(re.search(rf'(?i)\b{re.escape(k)}\b', line) for k in TOTAL_KEYWORDS):
             nums = re.findall(r'\d+(?:,\d{3})*(?:\.\d+)?', line)
 
             for n in nums:
                 val = float(n.replace(",", ""))
-                if val > 500:  # ignore unit prices
-                    totals.append(val)
+                totals.append(val)
 
     if not totals:
         all_nums = re.findall(r'\d+(?:,\d{3})*(?:\.\d+)?', text)
@@ -122,8 +121,8 @@ def extract_invoice_data(text):
 
     # ---------------- COMPANY + NAMES ----------------
     # Extract chunk between Company Name Name and Address
-    pattern = r'Company\s+Name\s+Name\s+(.*?)\s+Address'
-    match = re.search(pattern, text, re.IGNORECASE)
+    pattern = r'(?i)Company\s+Name\s+Name\s+(.*?)\s+Address'
+    match = re.search(pattern, text)
 
     if match:
         chunk = match.group(1).strip()

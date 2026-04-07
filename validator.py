@@ -28,7 +28,7 @@ def calculate_confidence(data):
     if data.get("total"):
         try:
             val = float(data["total"])
-            if 500 < val < 1e7:
+            if 0 < val < 1e7:
                 score += 1
         except:
             pass
@@ -64,7 +64,7 @@ def calculate_confidence(data):
     if data.get("names"):
         valid_names = [
             n for n in data["names"]
-            if len(n.split()) == 2  # first + last name
+            if len(n.split()) >= 2  # first + last name
         ]
 
         if valid_names:
