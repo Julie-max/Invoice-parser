@@ -150,7 +150,7 @@ def extract_invoice_data(text):
         for line in lines:
             if "company" in line.lower():
                 parts = line.split()
-                if len(parts) > 1:
+                if 0<len(parts)<5:
                     data["company"] = " ".join(parts[1:])
                     break
 
@@ -166,7 +166,7 @@ def extract_invoice_data(text):
 
     if not addresses:
         for line in lines:
-            if "address" in line.lower() and any(c.isdigit() for c in line):
+            if "address" in line.lower() and any(c.isdigit() for c in line) and len(line.strip())>15:
                 addresses.append(line.strip())
 
     if addresses:
