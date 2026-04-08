@@ -2,7 +2,7 @@ import re
 
 def calculate_confidence(data):
     score = 0
-    total_fields = 8   # we now include names + addresses
+    total_fields = 8
 
     # ---------------- INVOICE NUMBER ----------------
     if data.get("invoice_number"):
@@ -12,7 +12,6 @@ def calculate_confidence(data):
             5 <= len(val) <= 12
             and any(ch.isdigit() for ch in val)
             and not re.match(r'\d{2}[/-]\d{2}[/-]\d{4}', val)  # not date
-            and not (val.isdigit() and len(val) > 10)  # avoid long IDs
         ):
             score += 1
 
