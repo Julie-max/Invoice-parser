@@ -90,7 +90,7 @@ def extract_invoice_data(text):
     totals = []
 
     for line in lines:
-        if any(re.search(rf'(?i)\b{re.escape(k)}\b', line) for k in TOTAL_KEYWORDS):
+        if any(re.search(rf'(?i)\b{k}\b', line) for k in TOTAL_KEYWORDS):
             nums = re.findall(r'\d+(?:,\d{3})*(?:\.\d+)?', line)
 
             for n in nums:
