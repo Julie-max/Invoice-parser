@@ -124,7 +124,7 @@ streamlit run app.py
 
 ## 🌐 Deployment
 
-Deployed using **Streamlit Cloud** : [text](https://invoice-parser-julie.streamlit.app/)
+Deployed using **Streamlit Cloud** : [link](https://invoice-parser-julie.streamlit.app/)
 
 ---
 
