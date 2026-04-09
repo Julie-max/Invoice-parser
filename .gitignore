@@ -6,3 +6,4 @@ venv/
 *.tflite
 *.pt
 *.exe
+test.py
